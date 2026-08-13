@@ -3,6 +3,6 @@
 
 #include "4DPluginAPI.h"
 
-static void example_test(PA_PluginParameters params);
+static void example_greeting(PA_PluginParameters params);
 
 #endif /* EXAMPLE_4DPLUGIN_H */

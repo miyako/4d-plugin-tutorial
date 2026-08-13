@@ -4,7 +4,7 @@
  "commands": [
  {
  "theme": "test",
- "syntax": "example_test(&T;&L):T",
+ "syntax": "example_greeting(&T;&L):T",
  "threadSafe": true
  }
  ]

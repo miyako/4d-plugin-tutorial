@@ -5,12 +5,12 @@ void PluginMain(PA_long32 selector, PA_PluginParameters params) {
     switch(selector)
     {
         case 1 :
-            example_test(params);
+            example_greeting(params);
             break;
 
     }
 }
 
-static void example_test(PA_PluginParameters params) {
+static void example_greeting(PA_PluginParameters params) {
 
 }
