@@ -14,16 +14,10 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-            arch: arm64
             tool4d_archive: tool4d_arm64.tar.xz
-            tool4d_executable: tool4d.app/Contents/MacOS/tool4d
-            build_cmd: xcodebuild -project example/example.xcodeproj -target example -configuration Debug build CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           - os: windows-latest
             platform: win
-            arch: x64
             tool4d_archive: tool4d_win.tar.xz
-            tool4d_executable: tool4d/tool4d.exe
-            build_cmd: msbuild example/example.sln /p:Configuration=Debug /p:Platform=x64
 
     runs-on: ${{ matrix.os }}
 
@@ -78,14 +72,27 @@ jobs:
         if: runner.os == 'Windows'
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build plugin
+      - name: Build plugin (macOS)
+        if: runner.os == 'macOS'
         shell: bash
-        run: ${{ matrix.build_cmd }}
+        run: xcodebuild -project example/example.xcodeproj -target example -configuration Debug build CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
-      - name: Run tests
+      - name: Build plugin (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: msbuild example/example.sln /p:Configuration=Debug /p:Platform=x64
+
+      - name: Run tests (macOS)
+        if: runner.os == 'macOS'
         shell: bash
         run: |
-          ${{ matrix.tool4d_executable }} \
+          tool4d.app/Contents/MacOS/tool4d \
             --dataless \
             --startup-method=test_all \
             --project=$(pwd)/example/example-test/Project/example.4DProject
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tool4d/tool4d.exe --dataless --startup-method=test_all --project="$((Get-Location).Path)\example\example-test\Project\example.4DProject"
