@@ -1,4 +1,5 @@
 //%attributes = {"invisible":true,"preemptive":"capable"}
+$x:=example_greeting("Miyako"; example_greeting_morning)
 
 // Test explicit greeting types
 ASSERT:C1129(example_greeting("Miyako"; example_greeting_morning)="Good morning Miyako")
