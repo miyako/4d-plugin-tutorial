@@ -99,7 +99,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetExt>.4DX</TargetExt>
-    <OutDir>$(SolutionDir)$(ProjectName)-test\Plugins\Contents\Windows64</OutDir>
+    <OutDir>$(SolutionDir)$(ProjectName)-test\Plugins\$(ProjectName)\Contents\Windows64</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetExt>.4DX</TargetExt>
