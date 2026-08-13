@@ -21,6 +21,7 @@
 		D1947943302D500000ED7BDB /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "manifest.json"; sourceTree = "<group>"; };
 		D1947944302D500000ED7BDB /* constants.xlf */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "constants.xlf"; sourceTree = "<group>"; };
 		D1947946302D600000ED7BDB /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		D1947947302D700000ED7BDB /* example-release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "example-release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -55,6 +56,7 @@
 				D194793C302D398C00ED7BDB /* 4D Plugin API */,
 				D194792E302D395B00ED7BDB /* Products */,
 				D1947940302D42FE00ED7BDB /* example-debug.xcconfig */,
+				D1947947302D700000ED7BDB /* example-release.xcconfig */,
 				D1947943302D500000ED7BDB /* manifest.json */,
 				D1947944302D500000ED7BDB /* constants.xlf */,
 			);
@@ -215,6 +217,7 @@
 		};
 		D1947930302D395B00ED7BDB /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D1947947302D700000ED7BDB /* example-release.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
