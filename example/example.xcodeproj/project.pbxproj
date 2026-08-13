@@ -10,6 +10,7 @@
 		D194793F302D3D6C00ED7BDB /* example-4dplugin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D194793E302D3D6C00ED7BDB /* example-4dplugin.cpp */; };
 		D1947941302D500000ED7BDB /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = D1947943302D500000ED7BDB /* manifest.json */; };
 		D1947942302D500000ED7BDB /* constants.xlf in Resources */ = {isa = PBXBuildFile; fileRef = D1947944302D500000ED7BDB /* constants.xlf */; };
+		D1947945302D600000ED7BDB /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D1947946302D600000ED7BDB /* CoreGraphics.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +20,7 @@
 		D1947940302D42FE00ED7BDB /* example-debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "example-debug.xcconfig"; sourceTree = "<group>"; };
 		D1947943302D500000ED7BDB /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "manifest.json"; sourceTree = "<group>"; };
 		D1947944302D500000ED7BDB /* constants.xlf */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "constants.xlf"; sourceTree = "<group>"; };
+		D1947946302D600000ED7BDB /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -38,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D1947945302D600000ED7BDB /* CoreGraphics.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +82,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D194793C302D398C00ED7BDB /* 4D Plugin API */,
 			);
 			name = example;
 			packageProductDependencies = (

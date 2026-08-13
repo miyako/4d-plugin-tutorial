@@ -9,6 +9,9 @@
 	</trans-unit>
 </group>
 <group restype="x-4DK#" d4:groupName="example-greeting-type">
+	<trans-unit d4:value="0:L" id="example-greeting-type-0">
+		<source>example_greeting_default</source>
+	</trans-unit>
 	<trans-unit d4:value="1:L" id="example-greeting-type-1">
 		<source>example_greeting_morning</source>
 	</trans-unit>
