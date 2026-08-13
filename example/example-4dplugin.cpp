@@ -20,8 +20,13 @@ static void example_greeting(PA_PluginParameters params) {
     // determine greeting type from system time if default (0)
     if (greetingType == 0) {
         time_t now = time(NULL);
-        struct tm *local = localtime(&now);
-        int hour = local->tm_hour;
+        struct tm local;
+#ifdef _WIN32
+        localtime_s(&local, &now);
+#else
+        local = *localtime(&now);
+#endif
+        int hour = local.tm_hour;
         if (hour >= 3 && hour < 12) {
             greetingType = 1; // morning
         } else if (hour >= 12 && hour < 18) {
