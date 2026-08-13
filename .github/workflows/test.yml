@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -16,7 +17,7 @@ jobs:
             arch: arm64
             tool4d_archive: tool4d_arm64.tar.xz
             tool4d_executable: tool4d.app/Contents/MacOS/tool4d
-            build_cmd: xcodebuild -project example/example.xcodeproj -target example -configuration Debug build
+            build_cmd: xcodebuild -project example/example.xcodeproj -target example -configuration Debug build CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           - os: windows-latest
             platform: win
             arch: x64
