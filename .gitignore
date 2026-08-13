@@ -1,0 +1,8 @@
+example/example-test/Data/*
+example/example-test/Project/DerivedData/*
+example/example-test/userPreferences.*
+example/example-test/Plugins/
+example/build/
+**/xcuserdata/
+*.vcxproj.user
+.DS_Store
