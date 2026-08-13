@@ -6,3 +6,5 @@ example/build/
 **/xcuserdata/
 *.vcxproj.user
 .DS_Store
+example/.vs/*
+example/example/x64/*
