@@ -542,15 +542,25 @@ Key points:
 
 ```4d
 //%attributes = {"invisible":true}
-If (Application info.headless)
+If (Application info:C1599.headless)
 
     test_{command1}
     test_{command2}
 
-    LOG EVENT(Into system standard outputs; "PASS"; Information message)
+    LOG EVENT:C667(Into system standard outputs:K38:9; "PASS"; Information message:K38:1)
 
 End if
 ```
+
+**Important**: When generating `.4dm` files programmatically (outside the 4D IDE), you **must** include the command token suffixes (e.g., `:C1129` for ASSERT, `:C667` for LOG EVENT, `:C1599` for Application info) and constant token suffixes (e.g., `:K38:9` for `Into system standard outputs`). The IDE adds these automatically when editing interactively, but they are required in the raw file format.
+
+Common tokens:
+- `ASSERT:C1129`
+- `LOG EVENT:C667`
+- `Application info:C1599`
+- `Current time:C178`
+- `Into system standard outputs:K38:9`
+- `Information message:K38:1`
 
 - Guards with `Application info.headless` — only runs in CLI mode (tool4d)
 - Calls all individual test methods
@@ -569,6 +579,204 @@ End if
     },
     "trash": {}
 }
+```
+
+---
+
+## 4D Test Project Boilerplate
+
+When creating a 4D test project from scratch (without the 4D IDE), the following files are required. Replace `{name}` with the plugin name throughout.
+
+### Directory Structure
+
+```
+{name}-test/
+├── Project/
+│   ├── {name}.4DProject
+│   └── Sources/
+│       ├── Methods/
+│       │   ├── test_all.4dm
+│       │   └── test_{command}.4dm
+│       ├── catalog.4DCatalog
+│       ├── catalog_editor.json
+│       ├── folders.json
+│       ├── menus.json
+│       ├── roles.json
+│       └── settings.4DSettings
+├── Resources/
+└── Settings/
+    └── backup.4DSettings
+```
+
+### File Templates
+
+#### `{name}.4DProject`
+
+```json
+{
+    "$comment": "The project file serves as an anchor to locate other project files",
+    "compatibilityVersion": 2101
+}
+```
+
+Set `compatibilityVersion` to match your target 4D version. See [version encoding](#automated-testing-with-tool4d).
+
+#### `catalog.4DCatalog`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE base SYSTEM "http://www.4d.com/dtd/2007/base.dtd" >
+<base name="{name}" uuid="{GENERATE-A-UUID}" collation_locale="en-gb">
+    <schema name="DEFAULT_SCHEMA"/>
+    <base_extra>
+        <journal_file journal_file_enabled="false"/>
+    </base_extra>
+</base>
+```
+
+Generate a unique UUID (32 hex characters, uppercase) for each project.
+
+#### `catalog_editor.json`
+
+```json
+{
+    "tables": {}
+}
+```
+
+#### `folders.json`
+
+```json
+{
+    "Tests": {
+        "methods": [
+            "test_all",
+            "test_{command}"
+        ]
+    },
+    "trash": {}
+}
+```
+
+#### `menus.json`
+
+```json
+{
+    "bars": [
+        {
+            "id": 1,
+            "name": "Menu Bar",
+            "items": [
+                {"link": 32001},
+                {"link": 32002}
+            ]
+        }
+    ],
+    "menus": [
+        {
+            "link": 32001,
+            "title": ":xliff:CommonMenuFile",
+            "items": [
+                {
+                    "title": ":xliff:CommonMenuItemQuit",
+                    "shortcutAccel": true,
+                    "shortcutKey": "Q",
+                    "action": "quit"
+                }
+            ]
+        },
+        {
+            "link": 32002,
+            "title": ":xliff:CommonMenuEdit",
+            "items": [
+                {
+                    "title": ":xliff:CommonMenuItemUndo",
+                    "shortcutAccel": true,
+                    "shortcutKey": "Z",
+                    "action": "undo"
+                },
+                {"title": "(-", "isSeparator": true},
+                {
+                    "title": ":xliff:CommonMenuItemCut",
+                    "shortcutAccel": true,
+                    "shortcutKey": "X",
+                    "action": "cut"
+                },
+                {
+                    "title": ":xliff:CommonMenuItemCopy",
+                    "shortcutAccel": true,
+                    "shortcutKey": "C",
+                    "action": "copy"
+                },
+                {
+                    "title": ":xliff:CommonMenuItemPaste",
+                    "shortcutAccel": true,
+                    "shortcutKey": "V",
+                    "action": "paste"
+                },
+                {
+                    "title": ":xliff:CommonMenuItemSelectAll",
+                    "shortcutAccel": true,
+                    "shortcutKey": "A",
+                    "action": "selectAll"
+                }
+            ]
+        }
+    ]
+}
+```
+
+#### `roles.json`
+
+```json
+{
+    "forceLogin": false,
+    "restrictedByDefault": false,
+    "privileges": [],
+    "roles": [],
+    "permissions": {
+        "allowed": [
+            {
+                "applyTo": "ds",
+                "type": "datastore",
+                "read": [],
+                "create": [],
+                "update": [],
+                "drop": [],
+                "execute": [],
+                "promote": []
+            }
+        ]
+    }
+}
+```
+
+#### `settings.4DSettings`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<preferences stamp="2">
+    <com.4d>
+        <compiler>
+            <options target="all"/>
+        </compiler>
+    </com.4d>
+</preferences>
+```
+
+#### `backup.4DSettings`
+
+```xml
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<Preferences4D xmlns="http://www.4d.com/namespace/reserved/2004/backup">
+  <Backup>
+    <Settings>
+      <Scheduler>
+        <Frequency>Never</Frequency>
+      </Scheduler>
+    </Settings>
+  </Backup>
+</Preferences4D>
 ```
 
 ---
