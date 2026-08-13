@@ -542,25 +542,17 @@ Key points:
 
 ```4d
 //%attributes = {"invisible":true}
-If (Application info:C1599.headless)
+If (Application info.headless)
 
     test_{command1}
     test_{command2}
 
-    LOG EVENT:C667(Into system standard outputs:K38:9; "PASS"; Information message:K38:1)
+    LOG EVENT(Into system standard outputs; "PASS"; Information message)
 
 End if
 ```
 
-**Important**: When generating `.4dm` files programmatically (outside the 4D IDE), you **must** include the command token suffixes (e.g., `:C1129` for ASSERT, `:C667` for LOG EVENT, `:C1599` for Application info) and constant token suffixes (e.g., `:K38:9` for `Into system standard outputs`). The IDE adds these automatically when editing interactively, but they are required in the raw file format.
-
-Common tokens:
-- `ASSERT:C1129`
-- `LOG EVENT:C667`
-- `Application info:C1599`
-- `Current time:C178`
-- `Into system standard outputs:K38:9`
-- `Information message:K38:1`
+**Note on command token suffixes**: You may see suffixes like `:C1129` after command names (e.g., `ASSERT:C1129`) in `.4dm` files. These are added automatically by the 4D IDE to disambiguate between English and French command names. **You do not need to add them yourself** — tool4d is fixed to English coding and resolves plain command names without suffixes. When generating `.4dm` files programmatically, just use the plain English names (e.g., `ASSERT`, `LOG EVENT`, `Current time`).
 
 - Guards with `Application info.headless` — only runs in CLI mode (tool4d)
 - Calls all individual test methods
