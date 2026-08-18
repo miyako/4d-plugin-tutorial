@@ -873,8 +873,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Parse 4D version from .4DProject
+          fetch-depth: 0
         id: version
         shell: bash
         run: |
@@ -1060,9 +1059,9 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
           submodules: recursive
+          fetch-depth: 0
 
       - name: build with CMake
-        shell: pwsh
         run: |
           cd ${{ env.PRODUCT_NAME }}
           mkdir cmake-build; cd cmake-build
@@ -1086,6 +1085,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
           submodules: recursive
+          fetch-depth: 0
 
       - name: download windows binaries
         uses: actions/download-artifact@v4
