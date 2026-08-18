@@ -76,6 +76,7 @@ project-root/
 ├── README.md
 └── {plugin-name}/                # e.g., "example/"
     ├── CMakeLists.txt            # Cross-platform build (CMake)
+    ├── Info.plist.in             # macOS bundle Info.plist template (CRITICAL)
     ├── {name}-4dplugin.cpp       # Plugin implementation
     ├── {name}-4dplugin.h         # Plugin header
     ├── manifest.json             # Command definitions
@@ -1405,6 +1406,28 @@ endif()
 cmake .. -A x64
 ```
 
+### 9. Plugin loads but "License or privilege error" (macOS)
+
+**Symptom**: `tool4d.4DRT [-9949] License or privilege error. (PluginName (1.0))`
+
+**Cause**: CMake's default Info.plist sets `CFBundlePackageType` to `APPL`. 4D requires `BNDL`.
+
+**Fix**: Create `Info.plist.in` with `<string>BNDL</string>` and reference it in CMakeLists.txt:
+```cmake
+MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist.in"
+```
+
+### 10. Plugin command gets file path but can't open file (macOS)
+
+**Symptom**: `std::ifstream(path)` fails even though 4D's `Test path name` says the file exists.
+
+**Cause**: 4D's `Get 4D folder` returns HFS-style paths (`:` separated). C/C++ `fopen`/`ifstream` need POSIX paths (`/` separated).
+
+**Fix**: In the 4D test method, wrap paths with `Convert path system to POSIX()`:
+```4d
+$path:=Convert path system to POSIX(Get 4D folder(Current resources folder))+"file.html"
+```
+
 ---
 
 ## Step-by-Step Checklist
@@ -1426,8 +1449,9 @@ Given a plugin specification (name, commands, constants, behavior):
 - [ ] Create `manifest.json` with command syntax
 - [ ] Create `constants.xlf` with constant definitions
 
-### 3. CMakeLists.txt
-- [ ] Create `{name}/CMakeLists.txt` using the template
+### 3. CMakeLists.txt and Info.plist.in
+- [ ] Create `{name}/Info.plist.in` with `CFBundlePackageType = BNDL`
+- [ ] Create `{name}/CMakeLists.txt` using the template (with `MACOSX_BUNDLE_INFO_PLIST`)
 - [ ] Add third-party library via `add_subdirectory` if applicable
 - [ ] Set include directories for third-party headers
 - [ ] Link third-party libraries to the plugin target
@@ -1473,6 +1497,33 @@ This action handles:
 ## CMake-Based Project Generation (Recommended for Automation)
 
 Instead of manually crafting Xcode `.pbxproj` and Visual Studio `.vcxproj` files, use CMake to generate both from a single `CMakeLists.txt`. This is the **recommended approach for agents** since CMake files are plain text and easy to generate programmatically.
+
+### Info.plist.in Template (CRITICAL)
+
+Create `{name}/Info.plist.in` — this is **required** for the plugin to be recognized by 4D. Without it, CMake defaults `CFBundlePackageType` to `APPL` and 4D will refuse to load the plugin with a "License or privilege error".
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>English</string>
+    <key>CFBundleExecutable</key>
+    <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+    <key>CFBundleIdentifier</key>
+    <string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+    <key>CFBundleVersion</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+</dict>
+</plist>
+```
 
 ### CMakeLists.txt Template
 
@@ -1525,6 +1576,7 @@ if(APPLE)
     set_target_properties(${PLUGIN_NAME} PROPERTIES
         BUNDLE TRUE
         BUNDLE_EXTENSION "bundle"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist.in"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.4d.${PLUGIN_NAME}"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
