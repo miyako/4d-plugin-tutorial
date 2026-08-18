@@ -874,6 +874,8 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Parse 4D version from .4DProject
         id: version
         shell: bash
         run: |
@@ -1062,6 +1064,7 @@ jobs:
           fetch-depth: 0
 
       - name: build with CMake
+        shell: pwsh
         run: |
           cd ${{ env.PRODUCT_NAME }}
           mkdir cmake-build; cd cmake-build
@@ -1207,7 +1210,7 @@ The `release.yml` workflow requires the following repository secrets configured 
 - **`fail-fast: false`** — run both platforms independently so you see all failures
 - **CMake on Windows** — use `pwsh` shell; do NOT hardcode `-G "Visual Studio 17 2022"` — use `-A x64` alone so CMake auto-detects the installed VS version (runners update frequently)
 - **Universal binary** — pass `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` for release builds
-- **Submodules** — use `submodules: recursive` in checkout action
+- **Submodules** — use `submodules: recursive` and `fetch-depth: 0` in checkout action. Shallow clones (`--depth=1`) can fail to materialize files in submodule subdirectories (especially on Windows).
 - **Version management** — `bump-version.yml` reads/writes a `VERSION` file, not project files
 
 ---
