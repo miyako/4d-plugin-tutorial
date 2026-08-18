@@ -384,6 +384,78 @@ Use `#ifdef _WIN32` for Windows-specific code:
 
 MSVC treats many standard C functions as deprecated (`localtime`, `strcpy`, etc.). Use the `_s` variants on Windows to avoid build errors.
 
+### Working with 4D Pictures
+
+A 4D `Picture` is a **container** of multiple representations (formats). Each representation has a UTI string (semicolon-delimited identifiers including file extensions and MIME types). To extract pixel data (e.g. PNG), you must iterate representations to find the right format.
+
+**Pattern: Find a picture representation by type**
+
+```c
+// Returns the 1-based index of a representation matching the given type identifier.
+// type can be a MIME type ("image/png"), file extension (".png"), or UTI ("public.png").
+static PA_long32 get_picture_index(PA_Picture p, const char *type) {
+    PA_long32 i = 0;
+    if (!p) return 0;
+
+    PA_ErrorCode err = eER_NoErr;
+    while (err == eER_NoErr) {
+        PA_Unistring utype = PA_GetPictureData(p, ++i, NULL);
+        err = PA_GetLastError();
+        if (err != eER_NoErr) break;
+
+        // Convert UTF-16 UTI string to UTF-8
+        uint32_t len = (uint32_t)(utype.fLength * 4) + 1;
+        std::vector<uint8_t> buf(len);
+        PA_ConvertCharsetToCharset(
+            (char *)utype.fString, utype.fLength * sizeof(PA_Unichar), eVTC_UTF_16,
+            (char *)&buf[0], len, eVTC_UTF_8);
+        std::string uti((const char *)&buf[0]);
+
+        // UTI is semicolon-delimited, e.g. ".png;image/png;public.png;PNG"
+        size_t pos = 0, found = 0;
+        for (pos = uti.find(';'); pos != std::string::npos; pos = uti.find(';', found)) {
+            if (uti.substr(found, pos - found) == type) return i;
+            found = pos + 1;
+        }
+        if (uti.substr(found) == type) return i;
+    }
+    return 0;
+}
+```
+
+**Pattern: Extract raw image bytes from a Picture**
+
+```c
+PA_long32 idx = get_picture_index(picture, "image/png");
+if (idx) {
+    PA_Handle h = PA_NewHandle(0);
+    PA_GetPictureData(picture, idx, h);
+    if (PA_GetLastError() == eER_NoErr) {
+        uint8_t *data = (uint8_t *)PA_LockHandle(h);
+        size_t size = PA_GetHandleSize(h);
+        // ... use PNG data ...
+        PA_UnlockHandle(h);
+    }
+    PA_DisposeHandle(h);
+}
+```
+
+**Pattern: Return a Picture to 4D from raw bytes**
+
+```c
+// Create a picture from raw PNG/JPEG bytes
+PA_Picture pic = PA_CreatePicture((void *)png_data, png_size);
+PA_ReturnPicture(params, pic);
+PA_DisposePicture(pic);
+```
+
+**Notes:**
+- Always try multiple format identifiers as fallback (e.g. `"image/png"` then `".png"`)
+- The representation index is 1-based
+- `PA_GetPictureData` with `NULL` handle returns only the UTI string (for enumeration)
+- `PA_GetPictureData` with a valid handle fills it with the raw bytes
+- For output, `PA_CreatePicture` auto-detects format from the data header
+
 ---
 
 ## Xcode Project (macOS)
