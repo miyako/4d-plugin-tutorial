@@ -76,6 +76,7 @@ project-root/
 ├── README.md
 └── {plugin-name}/                # e.g., "example/"
     ├── CMakeLists.txt            # Cross-platform build (CMake)
+    ├── Info.plist.in             # macOS bundle Info.plist template (CRITICAL)
     ├── {name}-4dplugin.cpp       # Plugin implementation
     ├── {name}-4dplugin.h         # Plugin header
     ├── manifest.json             # Command definitions
@@ -1405,6 +1406,55 @@ endif()
 cmake .. -A x64
 ```
 
+### 9. Plugin loads but "License or privilege error" (macOS)
+
+**Symptom**: `tool4d.4DRT [-9949] License or privilege error. (PluginName (1.0))`
+
+**Cause**: CMake's default Info.plist sets `CFBundlePackageType` to `APPL`. 4D requires `BNDL`.
+
+**Fix**: Create `Info.plist.in` with `<string>BNDL</string>` and reference it in CMakeLists.txt:
+```cmake
+MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist.in"
+```
+
+### 10. Plugin command gets file path but can't open file (macOS)
+
+**Symptom**: `std::ifstream(path)` fails even though 4D's `Test path name` says the file exists.
+
+**Cause**: 4D's `Get 4D folder` returns HFS-style paths (`:` separated). C/C++ `fopen`/`ifstream` need POSIX paths (`/` separated).
+
+**Fix**: In the 4D test method, wrap paths with `Convert path system to POSIX()`:
+```4d
+$path:=Convert path system to POSIX(Get 4D folder(Current resources folder))+"file.html"
+```
+
+### 11. Third-party library fails to compile on MSVC with `constexpr` errors (C3615)
+
+**Symptom**: MSVC error `C3615: constexpr function '...' cannot result in a constant expression` in a third-party header (e.g., litehtml's `pixel_type.h` using `std::abs` in `constexpr` operators).
+
+**Cause**: The library marks functions as `constexpr` that call standard library functions (like `std::abs`) which MSVC does not consider `constexpr`, even in C++20. The C++ standard only requires `constexpr` math functions in C++23.
+
+**What does NOT work**:
+- `set_target_properties(lib PROPERTIES CXX_STANDARD 20)` — MSVC still rejects `std::abs` in constexpr context
+- `target_compile_options(lib PRIVATE /std:c++20)` — conflicts with the `/std:c++17` flag from `CXX_STANDARD` property
+
+**Fix**: Patch the offending header at CMake configure time, replacing `constexpr` with `inline`:
+```cmake
+add_subdirectory("${LITEHTML_DIR}" "${CMAKE_BINARY_DIR}/litehtml")
+if(MSVC)
+    file(READ "${LITEHTML_DIR}/include/litehtml/pixel_type.h" _pixel_src)
+    string(REPLACE "constexpr bool operator==" "inline bool operator==" _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator!=" "inline bool operator!=" _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator<"  "inline bool operator<"  _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator>"  "inline bool operator>"  _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator<=" "inline bool operator<=" _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator>=" "inline bool operator>=" _pixel_src "${_pixel_src}")
+    file(WRITE "${LITEHTML_DIR}/include/litehtml/pixel_type.h" "${_pixel_src}")
+endif()
+```
+
+This approach is generalizable: when a third-party header uses `constexpr` with standard library functions that MSVC rejects, patch the header with `file(READ)` / `string(REPLACE)` / `file(WRITE)` in CMake.
+
 ---
 
 ## Step-by-Step Checklist
@@ -1426,8 +1476,9 @@ Given a plugin specification (name, commands, constants, behavior):
 - [ ] Create `manifest.json` with command syntax
 - [ ] Create `constants.xlf` with constant definitions
 
-### 3. CMakeLists.txt
-- [ ] Create `{name}/CMakeLists.txt` using the template
+### 3. CMakeLists.txt and Info.plist.in
+- [ ] Create `{name}/Info.plist.in` with `CFBundlePackageType = BNDL`
+- [ ] Create `{name}/CMakeLists.txt` using the template (with `MACOSX_BUNDLE_INFO_PLIST`)
 - [ ] Add third-party library via `add_subdirectory` if applicable
 - [ ] Set include directories for third-party headers
 - [ ] Link third-party libraries to the plugin target
@@ -1473,6 +1524,33 @@ This action handles:
 ## CMake-Based Project Generation (Recommended for Automation)
 
 Instead of manually crafting Xcode `.pbxproj` and Visual Studio `.vcxproj` files, use CMake to generate both from a single `CMakeLists.txt`. This is the **recommended approach for agents** since CMake files are plain text and easy to generate programmatically.
+
+### Info.plist.in Template (CRITICAL)
+
+Create `{name}/Info.plist.in` — this is **required** for the plugin to be recognized by 4D. Without it, CMake defaults `CFBundlePackageType` to `APPL` and 4D will refuse to load the plugin with a "License or privilege error".
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>English</string>
+    <key>CFBundleExecutable</key>
+    <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+    <key>CFBundleIdentifier</key>
+    <string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+    <key>CFBundleVersion</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+</dict>
+</plist>
+```
 
 ### CMakeLists.txt Template
 
@@ -1525,6 +1603,7 @@ if(APPLE)
     set_target_properties(${PLUGIN_NAME} PROPERTIES
         BUNDLE TRUE
         BUNDLE_EXTENSION "bundle"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist.in"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.4d.${PLUGIN_NAME}"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
