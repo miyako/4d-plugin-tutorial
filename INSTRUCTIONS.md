@@ -446,10 +446,12 @@ if (idx) {
 // Create a picture from raw PNG/JPEG bytes
 PA_Picture pic = PA_CreatePicture((void *)png_data, png_size);
 PA_ReturnPicture(params, pic);
-PA_DisposePicture(pic);
+// Do NOT call PA_DisposePicture here — PA_ReturnPicture takes ownership.
+// Disposing after return causes a use-after-free crash in the runtime.
 ```
 
 **Notes:**
+- **`PA_ReturnPicture` takes ownership** of the `PA_Picture` — do NOT call `PA_DisposePicture` after it. The runtime disposes it when done.
 - Always try multiple format identifiers as fallback (e.g. `"image/png"` then `".png"`)
 - The representation index is 1-based
 - `PA_GetPictureData` with `NULL` handle returns only the UTI string (for enumeration)
@@ -1575,6 +1577,22 @@ add_subdirectory("${LIB_DIR}" "${CMAKE_BINARY_DIR}/libname")
 ```
 
 This reduces build time, avoids missing-dependency errors on CI, and keeps the plugin self-contained. Only enable what you actually use.
+
+### 14. Do NOT dispose returned pictures
+
+`PA_ReturnPicture` takes ownership of the `PA_Picture`. Calling `PA_DisposePicture` after `PA_ReturnPicture` causes a **use-after-free crash** deep in the 4D runtime (`VPicture::FromVPicture_Retain`). The same applies to other `PA_Return*` functions that take opaque handles — check whether the runtime takes ownership before disposing.
+
+```c
+// WRONG — crashes at runtime
+PA_Picture pic = PA_CreatePicture(data, size);
+PA_ReturnPicture(params, pic);
+PA_DisposePicture(pic);  // use-after-free!
+
+// CORRECT
+PA_Picture pic = PA_CreatePicture(data, size);
+PA_ReturnPicture(params, pic);
+// runtime owns it now — do not dispose
+```
 
 ---
 
