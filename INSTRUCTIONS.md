@@ -261,6 +261,17 @@ The order of commands in the `commands` array determines the `selector` number p
 - May not contain operators
 - Must not clash with 4D reserved identifiers (command names, built-in constants)
 
+### Command Naming Convention
+
+4D follows a naming convention based on whether a command returns a value:
+
+- **Commands that return a value**: Use title case (capitalize first word only after prefix)
+  - Example: `Archive Create`, `Archive List`, `HTML2MD`
+- **Commands that do NOT return a value**: Use ALL CAPS (except the prefix)
+  - Example: `Archive SET PASSPHRASE`, `SMTP SET OPTION`
+
+The prefix (theme word) always keeps its original casing.
+
 ### Omitted Parameters
 
 When a 4D caller omits a trailing parameter, the plugin receives the **default value for that type** (0 for Longint, empty string for Text, etc.). This allows optional parameters without special syntax.
@@ -862,8 +873,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Parse 4D version from .4DProject
+          fetch-depth: 0
         id: version
         shell: bash
         run: |
@@ -1049,9 +1059,9 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
           submodules: recursive
+          fetch-depth: 0
 
       - name: build with CMake
-        shell: pwsh
         run: |
           cd ${{ env.PRODUCT_NAME }}
           mkdir cmake-build; cd cmake-build
@@ -1075,6 +1085,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
           submodules: recursive
+          fetch-depth: 0
 
       - name: download windows binaries
         uses: actions/download-artifact@v4
@@ -1454,6 +1465,41 @@ endif()
 ```
 
 This approach is generalizable: when a third-party header uses `constexpr` with standard library functions that MSVC rejects, patch the header with `file(READ)` / `string(REPLACE)` / `file(WRITE)` in CMake.
+
+### 12. Windows link errors with static third-party library (`__declspec(dllimport)`)
+
+**Symptom**: Linker warnings or errors about importing symbols that should be statically linked (e.g., unresolved `__imp_archive_*` symbols).
+
+**Cause**: Many libraries (e.g., libarchive, libcurl) auto-detect DLL vs static via a preprocessor define. Their header uses `__declspec(dllimport)` by default on Windows, assuming you link the shared library.
+
+**Fix**: Define the library's `*_STATIC` macro on your plugin target:
+```cmake
+if(WIN32)
+    target_compile_definitions(${PLUGIN_NAME} PRIVATE LIBARCHIVE_STATIC)
+endif()
+```
+
+Common examples: `LIBARCHIVE_STATIC`, `CURL_STATICLIB`, `LIBXML_STATIC`, `PCRE2_STATIC`.
+
+### 13. Minimizing third-party library build scope
+
+When integrating a large library (like libarchive, libcurl, etc.) via `add_subdirectory`, disable all optional features you don't need **before** the `add_subdirectory` call:
+
+```cmake
+# Example: libarchive — disable tools, tests, and optional dependencies
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(ENABLE_TAR OFF CACHE BOOL "" FORCE)
+set(ENABLE_CPIO OFF CACHE BOOL "" FORCE)
+set(ENABLE_CAT OFF CACHE BOOL "" FORCE)
+set(ENABLE_TEST OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+# Disable optional deps that would require external packages:
+set(ENABLE_OPENSSL OFF CACHE BOOL "" FORCE)
+set(ENABLE_LZMA OFF CACHE BOOL "" FORCE)
+add_subdirectory("${LIB_DIR}" "${CMAKE_BINARY_DIR}/libname")
+```
+
+This reduces build time, avoids missing-dependency errors on CI, and keeps the plugin self-contained. Only enable what you actually use.
 
 ---
 
