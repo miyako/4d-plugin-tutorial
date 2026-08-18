@@ -18,8 +18,10 @@ A comprehensive reference for building a 4D plugin from scratch in C/C++. This d
 10. [4D Test Project](#4d-test-project)
 11. [Automated Testing with tool4d](#automated-testing-with-tool4d)
 12. [GitHub Actions CI/CD](#github-actions-cicd)
-13. [Common Pitfalls](#common-pitfalls)
-14. [Step-by-Step Checklist](#step-by-step-checklist)
+13. [GitHub Actions — Release Workflow](#github-actions--release-workflow)
+14. [README Template](#readme-template)
+15. [Common Pitfalls](#common-pitfalls)
+16. [Step-by-Step Checklist](#step-by-step-checklist)
 
 ---
 
@@ -65,21 +67,19 @@ A 4D plugin is a native dynamic library loaded by the 4D runtime at startup:
 project-root/
 ├── .github/
 │   └── workflows/
-│       └── test.yml              # CI/CD workflow
+│       ├── test.yml              # CI test workflow (tag + manual)
+│       ├── bump-version.yml      # Version bump + tag push
+│       └── release.yml           # Build, sign, notarize & release
 ├── .gitignore
 ├── 4D-Plugin-SDK/                # Git submodule
+├── VERSION                       # Semantic version file (e.g. "1.0.0")
 ├── README.md
 └── {plugin-name}/                # e.g., "example/"
+    ├── CMakeLists.txt            # Cross-platform build (CMake)
     ├── {name}-4dplugin.cpp       # Plugin implementation
     ├── {name}-4dplugin.h         # Plugin header
     ├── manifest.json             # Command definitions
     ├── constants.xlf             # Constant definitions
-    ├── {name}-debug.xcconfig     # Xcode debug output path
-    ├── {name}-release.xcconfig   # Xcode release output path
-    ├── {name}.xcodeproj/         # Xcode project
-    ├── {name}.sln                # Visual Studio solution
-    ├── {name}.vcxproj            # Visual Studio project
-    ├── {name}.vcxproj.filters    # VS solution explorer filters
     └── {name}-test/              # 4D test project
         ├── Plugins/              # Built plugin output (gitignored)
         ├── Project/
@@ -93,6 +93,16 @@ project-root/
         └── Settings/
 ```
 
+### VERSION File
+
+Create a `VERSION` file in the project root containing the semantic version:
+
+```
+1.0.0
+```
+
+This file is the single source of truth for the version number, used by `bump-version.yml` to tag releases.
+
 ### .gitignore
 
 ```
@@ -100,6 +110,7 @@ project-root/
 {name}/{name}-test/Project/DerivedData/*
 {name}/{name}-test/userPreferences.*
 {name}/{name}-test/Plugins/
+{name}/cmake-build/
 {name}/build/
 **/xcuserdata/
 *.vcxproj.user
@@ -817,7 +828,9 @@ No authentication required for download.
 
 ## GitHub Actions CI/CD
 
-### Workflow Template
+### `test.yml` — Build & Test (CMake)
+
+This workflow builds the plugin using CMake on both platforms and runs tests with tool4d. Triggered on tag push or manual dispatch.
 
 ```yaml
 name: Build and Test
@@ -878,22 +891,23 @@ jobs:
           curl "${url}" -o tool4d.tar.xz -sL
           tar xJf tool4d.tar.xz
 
-      - name: Setup MSBuild
-        if: runner.os == 'Windows'
-        uses: microsoft/setup-msbuild@v2
-
       - name: Build plugin (macOS)
         if: runner.os == 'macOS'
         shell: bash
-        run: >
-          xcodebuild -project {name}/{name}.xcodeproj -target {name}
-          -configuration Debug build
-          CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+        run: |
+          cd {name}
+          mkdir -p cmake-build && cd cmake-build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build .
 
       - name: Build plugin (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: msbuild {name}/{name}.sln /p:Configuration=Debug /p:Platform=x64
+        run: |
+          cd {name}
+          mkdir cmake-build; cd cmake-build
+          cmake .. -G "Visual Studio 17 2022" -A x64
+          cmake --build . --config Release
 
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
@@ -912,12 +926,408 @@ jobs:
           --project="$((Get-Location).Path)\{name}\{name}-test\Project\{name}.4DProject"
 ```
 
+---
+
+## GitHub Actions — Release Workflow
+
+### `bump-version.yml` — Version Bump & Tag
+
+Reads/writes a `VERSION` file in the project root. On manual dispatch, bumps the version, commits, and pushes a `vX.Y.Z` tag that triggers `release.yml`.
+
+```yaml
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        description: Semantic version bump
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: bump VERSION
+        id: bump
+        run: |
+          set -euo pipefail
+          CURRENT=$(cat VERSION)
+          if [ -z "$CURRENT" ]; then
+            echo "Could not read VERSION file" >&2
+            exit 1
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          case "${{ inputs.mode }}" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+          NEW="${MAJOR}.${MINOR}.${PATCH}"
+
+          echo "Bumping ${CURRENT} -> ${NEW}"
+          echo "$NEW" > VERSION
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump version to ${NEW}"
+          git tag "v${NEW}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
+          git push origin "v${NEW}"
+
+          echo "version=${NEW}" >> "$GITHUB_OUTPUT"
+
+      - name: summary
+        run: echo "### Bumped to v${{ steps.bump.outputs.version }} — release.yml will pick up the pushed tag." >> "$GITHUB_STEP_SUMMARY"
+```
+
+### `release.yml` — Build, Sign, Notarize & Release
+
+Builds the plugin for both platforms using CMake, codesigns + notarizes the macOS binary, merges Windows + macOS into a single cross-platform `.bundle`, and publishes a GitHub Release.
+
+```yaml
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build (e.g. v2.3.0)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  PRODUCT_NAME: {name}
+  MACOS_DEPLOYMENT_TARGET: '10.13'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.set.outputs.tag }}
+      version: ${{ steps.set.outputs.version }}
+    steps:
+      - id: set
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    name: Build Windows (x64)
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          submodules: recursive
+
+      - name: build with CMake
+        shell: pwsh
+        run: |
+          cd ${{ env.PRODUCT_NAME }}
+          mkdir cmake-build; cd cmake-build
+          cmake .. -G "Visual Studio 17 2022" -A x64
+          cmake --build . --config Release
+
+      - name: upload windows binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            ${{ env.PRODUCT_NAME }}/${{ env.PRODUCT_NAME }}-test/Plugins/${{ env.PRODUCT_NAME }}/Contents/Windows64/${{ env.PRODUCT_NAME }}.4DX
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS, package, sign, notarize & release
+    needs: [version, build-windows]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          submodules: recursive
+
+      - name: download windows binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binaries
+          path: winbuild
+
+      - name: import Developer ID certificate
+        env:
+          CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+
+          echo -n "$CERT_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: store notarytool credentials
+        env:
+          APPLE_ID: ${{ secrets.NOTARYTOOL_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARYTOOL_TEAM_ID }}
+          APP_PASSWORD: ${{ secrets.NOTARYTOOL_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "notarytool-profile" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APP_PASSWORD" \
+            --keychain "$KEYCHAIN_PATH"
+
+      - name: build macOS plugin (universal)
+        run: |
+          cd ${{ env.PRODUCT_NAME }}
+          mkdir -p cmake-build && cd cmake-build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="${{ env.MACOS_DEPLOYMENT_TARGET }}"
+          cmake --build .
+
+      - name: verify universal binary
+        run: |
+          set -euo pipefail
+          BIN="${{ env.PRODUCT_NAME }}/${{ env.PRODUCT_NAME }}-test/Plugins/${{ env.PRODUCT_NAME }}.bundle/Contents/MacOS/${{ env.PRODUCT_NAME }}"
+          lipo -info "$BIN"
+          lipo -info "$BIN" | grep -q "arm64" && lipo -info "$BIN" | grep -q "x86_64"
+
+      - name: merge Windows binaries into the bundle
+        run: |
+          set -euo pipefail
+          BUNDLE="${{ env.PRODUCT_NAME }}/${{ env.PRODUCT_NAME }}-test/Plugins/${{ env.PRODUCT_NAME }}.bundle"
+          mkdir -p "$BUNDLE/Contents/Windows64"
+          cp "winbuild/${{ env.PRODUCT_NAME }}.4DX" "$BUNDLE/Contents/Windows64/${{ env.PRODUCT_NAME }}.4DX"
+          echo "BUNDLE_PATH=$BUNDLE" >> "$GITHUB_ENV"
+
+      - name: codesign
+        run: |
+          set -euo pipefail
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "Signing with: $IDENTITY"
+          codesign --verbose --deep --timestamp --force --options=runtime \
+            --sign "$IDENTITY" "$BUNDLE_PATH"
+          codesign --verify --deep --strict --verbose=2 "$BUNDLE_PATH"
+
+      - name: package, notarize & staple
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
+          ZIP_PATH="${{ env.PRODUCT_NAME }}-${VERSION}.zip"
+          DMG_PATH="${{ env.PRODUCT_NAME }}-${VERSION}.dmg"
+
+          ditto -c -k --keepParent "$BUNDLE_PATH" "$ZIP_PATH"
+          hdiutil create -format UDBZ -volname "${{ env.PRODUCT_NAME }}" -srcfolder "$BUNDLE_PATH" "$DMG_PATH"
+
+          xcrun notarytool submit "$ZIP_PATH" --keychain-profile "notarytool-profile" --keychain "$KEYCHAIN_PATH" --wait
+          xcrun notarytool submit "$DMG_PATH" --keychain-profile "notarytool-profile" --keychain "$KEYCHAIN_PATH" --wait
+          xcrun stapler staple "$DMG_PATH"
+
+          echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+
+      - name: create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          files: |
+            ${{ env.ZIP_PATH }}
+            ${{ env.DMG_PATH }}
+```
+
+### Required GitHub Secrets for Release
+
+The `release.yml` workflow requires the following repository secrets configured in **Settings → Secrets and variables → Actions**:
+
+| Secret | Description |
+|---|---|
+| `APPLE_DEVELOPER_ID_CERTIFICATE` | Base64-encoded `.p12` Developer ID Application certificate. Export from Keychain Access, then encode: `base64 -i certificate.p12 \| pbcopy` |
+| `APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` file |
+| `KEYCHAIN_PASSWORD` | Arbitrary password for the temporary keychain created on the runner (can be any random string) |
+| `NOTARYTOOL_APPLE_ID` | Your Apple ID email address (used for notarization) |
+| `NOTARYTOOL_TEAM_ID` | Your Apple Developer Team ID (10-character alphanumeric, visible in Apple Developer portal) |
+| `NOTARYTOOL_PASSWORD` | App-specific password generated at [appleid.apple.com](https://appleid.apple.com/account/manage) → Sign-In and Security → App-Specific Passwords |
+
+**Note:** The `test.yml` and `bump-version.yml` workflows do NOT require any secrets. Only `release.yml` needs them for code signing and notarization.
+
 ### CI Caveats
 
 - **`fail-fast: false`** — run both platforms independently so you see all failures
-- **macOS code signing** — must disable for CI (no signing certificate on runner)
-- **Windows shell** — `msbuild` must run under `pwsh` or `cmd`, not `bash` (setup-msbuild adds to PATH for PowerShell only)
+- **CMake on Windows** — use `pwsh` shell; CMake finds MSVC automatically (no `setup-msbuild` needed)
+- **Universal binary** — pass `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` for release builds
 - **Submodules** — use `submodules: recursive` in checkout action
+- **Version management** — `bump-version.yml` reads/writes a `VERSION` file, not project files
+
+---
+
+## README Template
+
+Generate a `README.md` in the project root with the following structure. Replace `{name}`, `{description}`, command signatures, and examples with the actual plugin details.
+
+````markdown
+# {name}
+
+{description}
+
+## Requirements
+
+- 4D v21.1 or later (compatible with the `compatibilityVersion` in `.4DProject`)
+
+## Installation
+
+Download the latest release from the [Releases](../../releases) page.
+
+### macOS & Windows (single download)
+
+1. Download the `.zip` from the release
+2. Extract to get the `{name}.bundle` folder
+3. Copy the `.bundle` into your 4D application's **Plugins** folder (or your database's **Plugins** folder)
+4. Restart 4D
+
+### macOS only (notarized DMG)
+
+1. Download the `.dmg` from the release
+2. Mount it and copy the `.bundle` into your **Plugins** folder
+3. Restart 4D
+
+## Commands
+
+### `{CommandName}`
+
+```4d
+// Syntax from manifest.json, e.g.:
+$result:={CommandName}($arg1; $arg2)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `$arg1` | Text | Description of first argument |
+| `$result` | Text | Description of return value |
+
+**Example:**
+
+```4d
+$result:={CommandName}("example input")
+ASSERT($result="expected output")
+```
+
+{repeat for each command}
+
+## Constants
+
+{if the plugin defines constants in constants.xlf, list them here}
+
+| Constant | Type | Value | Description |
+|---|---|---|---|
+| `Constant Name` | Longint | 1 | Description |
+
+## Building from Source
+
+### Prerequisites
+
+- CMake 3.20+
+- Xcode (macOS) or Visual Studio 2022 (Windows)
+
+### Clone
+
+```bash
+git clone --recurse-submodules https://github.com/{owner}/{repo}.git
+cd {repo}
+```
+
+### Build (macOS)
+
+```bash
+cd {name}
+mkdir -p cmake-build && cd cmake-build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+```
+
+### Build (Windows)
+
+```pwsh
+cd {name}
+mkdir cmake-build; cd cmake-build
+cmake .. -G "Visual Studio 17 2022" -A x64
+cmake --build . --config Release
+```
+
+### Run Tests
+
+Requires [tool4d](https://developer.4d.com/docs/Admin/cli/) (free, no license needed):
+
+```bash
+/path/to/tool4d --dataless --startup-method=test_all --project=$(pwd)/{name}-test/Project/{name}.4DProject
+```
+
+## CI/CD
+
+This project uses GitHub Actions for automated testing and releases:
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `test.yml` | Tag push / manual | Build & test on macOS + Windows |
+| `bump-version.yml` | Manual | Bump `VERSION`, commit, push tag |
+| `release.yml` | `v*.*.*` tag | Build, sign, notarize, GitHub Release |
+
+### Required Secrets (for `release.yml` only)
+
+Configure these in **Settings → Secrets and variables → Actions**:
+
+| Secret | Description |
+|---|---|
+| `APPLE_DEVELOPER_ID_CERTIFICATE` | Base64-encoded `.p12` Developer ID Application certificate |
+| `APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD` | Password for the `.p12` export |
+| `KEYCHAIN_PASSWORD` | Arbitrary password for the CI runner's temporary keychain |
+| `NOTARYTOOL_APPLE_ID` | Apple ID email for notarization |
+| `NOTARYTOOL_TEAM_ID` | Apple Developer Team ID (10-char alphanumeric) |
+| `NOTARYTOOL_PASSWORD` | App-specific password from [appleid.apple.com](https://appleid.apple.com/account/manage) |
+
+## License
+
+{license}
+````
 
 ---
 
@@ -978,6 +1388,8 @@ Given a plugin specification (name, commands, constants, behavior):
 ### 1. Repository Setup
 - [ ] Create repository
 - [ ] Add `4D-Plugin-SDK` as git submodule
+- [ ] Add any third-party library dependencies as git submodules
+- [ ] Create `VERSION` file with initial version `1.0.0`
 - [ ] Create `.gitignore`
 - [ ] Commit
 
@@ -988,30 +1400,13 @@ Given a plugin specification (name, commands, constants, behavior):
 - [ ] Create `manifest.json` with command syntax
 - [ ] Create `constants.xlf` with constant definitions
 
-### 3. Xcode Project (macOS)
-- [ ] Create bundle target
-- [ ] Add `{name}-4dplugin.cpp` to Sources
-- [ ] Add SDK folder as PBXFileSystemSynchronizedRootGroup
-- [ ] **Add `fileSystemSynchronizedGroups` to native target**
-- [ ] Set `explicitFileTypes` for `4DPluginAPI.c` → `sourcecode.cpp.cpp`
-- [ ] Link `CoreGraphics.framework`
-- [ ] Add `manifest.json` and `constants.xlf` to Copy Bundle Resources
-- [ ] Create debug/release xcconfig files with `CONFIGURATION_BUILD_DIR`
-- [ ] Set xcconfig as `baseConfigurationReference` on build configurations
-- [ ] Build and verify with `nm -g` (check for `_FourDPackex`, `_gCall4D`, `_PluginMain`)
+### 3. CMakeLists.txt
+- [ ] Create `{name}/CMakeLists.txt` using the template
+- [ ] Add third-party library via `add_subdirectory` if applicable
+- [ ] Set include directories for third-party headers
+- [ ] Link third-party libraries to the plugin target
 
-### 4. Visual Studio Project (Windows)
-- [ ] Create DLL project (x64 only as DynamicLibrary)
-- [ ] Set target extension to `.4DX`
-- [ ] Add SDK include path: `$(SolutionDir)..\4D-Plugin-SDK\4D Plugin API`
-- [ ] Add `4DPluginAPI.c` to compile sources
-- [ ] Set module definition file: `4DPluginAPI.def`
-- [ ] Set runtime library: `/MTd` (Debug), `/MT` (Release)
-- [ ] Set output directory for Debug and Release
-- [ ] Add post-build xcopy for manifest.json and constants.xlf
-- [ ] Build and test
-
-### 5. 4D Test Project
+### 4. 4D Test Project
 - [ ] Create blank 4D project in `{name}-test/`
 - [ ] Set `compatibilityVersion` in `.4DProject`
 - [ ] Create `folders.json` with "Tests" virtual folder
@@ -1019,23 +1414,21 @@ Given a plugin specification (name, commands, constants, behavior):
 - [ ] Create `test_all.4dm` runner method
 - [ ] Run tests locally with tool4d
 
-### 6. C/C++ Implementation
+### 5. C/C++ Implementation
 - [ ] Implement command functions using SDK getters/setters
 - [ ] Handle platform differences with `#ifdef _WIN32`
-- [ ] Build on both platforms
-- [ ] Run tests on both platforms
+- [ ] Build on both platforms (or at least macOS for initial validation)
+- [ ] Run tests
 
-### 7. CI/CD
-- [ ] Create `.github/workflows/test.yml`
-- [ ] Parse `compatibilityVersion` for tool4d version
-- [ ] Build on macOS with code signing disabled
-- [ ] Build on Windows with pwsh shell
-- [ ] Run tool4d tests on both platforms
+### 6. GitHub Actions Workflows
+- [ ] Create `.github/workflows/test.yml` (CMake build + tool4d tests)
+- [ ] Create `.github/workflows/bump-version.yml` (version bump + tag)
+- [ ] Create `.github/workflows/release.yml` (build, sign, notarize, release)
 - [ ] Verify CI passes
 
-### 8. Documentation
-- [ ] Write README with command signatures, constants, and examples
-- [ ] Add comments to test methods
+### 7. Documentation
+- [ ] Create `README.md` using the template (see [README Template](#readme-template))
+- [ ] Document required GitHub Secrets for release workflow
 
 ---
 
@@ -1188,29 +1581,7 @@ cmake --build . --config Debug
 
 ### CI/CD with CMake
 
-Replace the platform-specific build steps in the GitHub Actions workflow:
-
-```yaml
-      - name: Build plugin (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          cd {name}
-          mkdir -p cmake-build && cd cmake-build
-          cmake .. -DCMAKE_BUILD_TYPE=Debug
-          cmake --build .
-
-      - name: Build plugin (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          cd {name}
-          mkdir cmake-build; cd cmake-build
-          cmake .. -G "Visual Studio 17 2022" -A x64
-          cmake --build . --config Debug
-```
-
-This eliminates the need for `microsoft/setup-msbuild` since CMake finds the compiler automatically.
+See the full workflow templates in [GitHub Actions CI/CD](#github-actions-cicd) and [GitHub Actions — Release Workflow](#github-actions--release-workflow). CMake eliminates the need for `microsoft/setup-msbuild` since it finds the compiler automatically.
 
 ### Advantages for Automation
 
