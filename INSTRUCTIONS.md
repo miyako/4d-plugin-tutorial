@@ -1428,6 +1428,33 @@ MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist.in"
 $path:=Convert path system to POSIX(Get 4D folder(Current resources folder))+"file.html"
 ```
 
+### 11. Third-party library fails to compile on MSVC with `constexpr` errors (C3615)
+
+**Symptom**: MSVC error `C3615: constexpr function '...' cannot result in a constant expression` in a third-party header (e.g., litehtml's `pixel_type.h` using `std::abs` in `constexpr` operators).
+
+**Cause**: The library marks functions as `constexpr` that call standard library functions (like `std::abs`) which MSVC does not consider `constexpr`, even in C++20. The C++ standard only requires `constexpr` math functions in C++23.
+
+**What does NOT work**:
+- `set_target_properties(lib PROPERTIES CXX_STANDARD 20)` — MSVC still rejects `std::abs` in constexpr context
+- `target_compile_options(lib PRIVATE /std:c++20)` — conflicts with the `/std:c++17` flag from `CXX_STANDARD` property
+
+**Fix**: Patch the offending header at CMake configure time, replacing `constexpr` with `inline`:
+```cmake
+add_subdirectory("${LITEHTML_DIR}" "${CMAKE_BINARY_DIR}/litehtml")
+if(MSVC)
+    file(READ "${LITEHTML_DIR}/include/litehtml/pixel_type.h" _pixel_src)
+    string(REPLACE "constexpr bool operator==" "inline bool operator==" _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator!=" "inline bool operator!=" _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator<"  "inline bool operator<"  _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator>"  "inline bool operator>"  _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator<=" "inline bool operator<=" _pixel_src "${_pixel_src}")
+    string(REPLACE "constexpr bool operator>=" "inline bool operator>=" _pixel_src "${_pixel_src}")
+    file(WRITE "${LITEHTML_DIR}/include/litehtml/pixel_type.h" "${_pixel_src}")
+endif()
+```
+
+This approach is generalizable: when a third-party header uses `constexpr` with standard library functions that MSVC rejects, patch the header with `file(READ)` / `string(REPLACE)` / `file(WRITE)` in CMake.
+
 ---
 
 ## Step-by-Step Checklist
