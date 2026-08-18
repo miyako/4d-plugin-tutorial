@@ -1379,6 +1379,32 @@ Configure these in **Settings → Secrets and variables → Actions**:
 
 **Fix**: Widen ASCII manually: `result[i] = (PA_Unichar)ascii_char;`
 
+### 7. CRT mismatch with third-party libraries (Windows)
+
+**Symptom**: `error LNK2038: mismatch detected for 'RuntimeLibrary': value 'MD_DynamicRelease' doesn't match value 'MT_StaticRelease'`
+
+**Cause**: The plugin uses static CRT (`/MT`) but a third-party library added via `add_subdirectory` defaults to dynamic CRT (`/MD`).
+
+**Fix**: Set `CMAKE_MSVC_RUNTIME_LIBRARY` globally **before** `add_subdirectory` so all targets use the same CRT:
+
+```cmake
+if(WIN32)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+endif()
+```
+
+### 8. CMake generator mismatch on CI (Windows)
+
+**Symptom**: `Visual Studio 17 2022 could not find any instance of Visual Studio`
+
+**Cause**: GitHub runner images update frequently; `windows-latest` may ship VS 2026 while the workflow hardcodes VS 2022.
+
+**Fix**: Omit `-G` and use only `-A x64`. CMake auto-detects the installed VS version:
+
+```cmake
+cmake .. -A x64
+```
+
 ---
 
 ## Step-by-Step Checklist
@@ -1465,6 +1491,11 @@ set(CMAKE_C_STANDARD 17)
 
 # --- SDK paths ---
 set(SDK_DIR "${CMAKE_SOURCE_DIR}/../4D-Plugin-SDK/4D Plugin API")
+
+# --- Static CRT on Windows (MUST be set before add_subdirectory for third-party libs) ---
+if(WIN32)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+endif()
 
 # --- Source files ---
 set(PLUGIN_SOURCES
