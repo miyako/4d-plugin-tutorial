@@ -906,7 +906,7 @@ jobs:
         run: |
           cd {name}
           mkdir cmake-build; cd cmake-build
-          cmake .. -G "Visual Studio 17 2022" -A x64
+          cmake .. -A x64
           cmake --build . --config Release
 
       - name: Run tests (macOS)
@@ -1054,7 +1054,7 @@ jobs:
         run: |
           cd ${{ env.PRODUCT_NAME }}
           mkdir cmake-build; cd cmake-build
-          cmake .. -G "Visual Studio 17 2022" -A x64
+          cmake .. -A x64
           cmake --build . --config Release
 
       - name: upload windows binaries
@@ -1193,7 +1193,7 @@ The `release.yml` workflow requires the following repository secrets configured 
 ### CI Caveats
 
 - **`fail-fast: false`** — run both platforms independently so you see all failures
-- **CMake on Windows** — use `pwsh` shell; CMake finds MSVC automatically (no `setup-msbuild` needed)
+- **CMake on Windows** — use `pwsh` shell; do NOT hardcode `-G "Visual Studio 17 2022"` — use `-A x64` alone so CMake auto-detects the installed VS version (runners update frequently)
 - **Universal binary** — pass `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` for release builds
 - **Submodules** — use `submodules: recursive` in checkout action
 - **Version management** — `bump-version.yml` reads/writes a `VERSION` file, not project files
@@ -1289,7 +1289,7 @@ cmake --build .
 ```pwsh
 cd {name}
 mkdir cmake-build; cd cmake-build
-cmake .. -G "Visual Studio 17 2022" -A x64
+cmake .. -A x64
 cmake --build . --config Release
 ```
 
@@ -1575,7 +1575,7 @@ cmake --build .
 ```pwsh
 cd {name}
 mkdir cmake-build; cd cmake-build
-cmake .. -G "Visual Studio 17 2022" -A x64
+cmake .. -A x64
 cmake --build . --config Debug
 ```
 
