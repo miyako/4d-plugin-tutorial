@@ -1161,7 +1161,7 @@ jobs:
           echo "Signing with: $IDENTITY"
           codesign --verbose --deep --timestamp --force --options=runtime \
             --sign "$IDENTITY" "$BUNDLE_PATH"
-          codesign --verify --deep --strict --verbose=2 "$BUNDLE_PATH"
+          codesign --verify --strict --verbose=2 "$BUNDLE_PATH"
 
       - name: package, notarize & staple
         run: |
@@ -1212,6 +1212,7 @@ The `release.yml` workflow requires the following repository secrets configured 
 - **Universal binary** — pass `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` for release builds
 - **Submodules** — use `submodules: recursive` and `fetch-depth: 0` in checkout action. Shallow clones (`--depth=1`) can fail to materialize files in submodule subdirectories (especially on Windows).
 - **Version management** — `bump-version.yml` reads/writes a `VERSION` file, not project files
+- **Codesign verify** — use `codesign --verify --strict` (without `--deep`) on the verify step. macOS 26+ rejects `--deep --strict` on bundles containing non-Mach-O files (e.g. Windows64/*.4DX). The sign step still uses `--deep --force`.
 
 ---
 
