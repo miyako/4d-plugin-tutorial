@@ -2005,3 +2005,5 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 4. **Object return type in manifest is `J`** — not `O` (Pitfall #17)
 5. **Always use `PA_GetObjectVariable(result)`** — not `result.uValue.fObject` directly
 6. **Deploy both binary AND manifest.json** to the test project's Plugins folder after builds
+7. **Windows needs a `.def` file** for exports — `__declspec(dllexport)` conflicts with SDK header (Pitfall #18)
+8. **Wrap all macOS-specific CMake** in `if(APPLE)` — frameworks, bundle properties, visibility flags (Pitfall #18)
