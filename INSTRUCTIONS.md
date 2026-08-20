@@ -1594,6 +1594,91 @@ PA_ReturnPicture(params, pic);
 // runtime owns it now — do not dispose
 ```
 
+### 15. PA_JsonParse SDK bug — crashes with eVK_Object
+
+`PA_JsonParse` in the SDK has a bug: when called with `eVK_Object`, it does **not** zero-initialize the `PA_Variable params[2]` array before calling `PA_SetStringVariable` / `PA_SetLongintVariable`. The uninitialized memory causes a crash in `GetLongOptParam` → `do_JSONParse`. The `eVK_ArrayObject` branch works because it calls `PA_CreateVariable` which zeroes the struct.
+
+**Workaround:** bypass `PA_JsonParse` and call `PA_ExecuteCommandByID(1218, ...)` directly with `memset`-zeroed params:
+
+```c
+PA_Unistring jsonUstr = PA_CreateUnistring((PA_Unichar*)json16buf.data());
+
+PA_Variable cmdParams[2];
+memset(cmdParams, 0, sizeof(cmdParams));
+PA_SetStringVariable(&cmdParams[0], &jsonUstr);
+PA_SetLongintVariable(&cmdParams[1], eVK_Object);
+PA_Variable result = PA_ExecuteCommandByID(1218, cmdParams, 2); // JSON Parse
+
+PA_ReturnObject(params, PA_GetObjectVariable(result));
+```
+
+**Do NOT** call `PA_DisposeUnistring` on the string after passing it to JSON Parse — the runtime takes ownership.
+
+### 16. macOS case-insensitive filesystem — submodule naming
+
+On HFS+/APFS (default case-insensitive), directory names like `CLD2/` and `cld2/` refer to the **same** directory. If you name your plugin folder `CLD2` and add a git submodule at `cld2`, removing one destroys the other. **Fix:** use an unambiguous submodule name (e.g., `cld2-src`).
+
+### 17. manifest.json object return type is `J`, not `O`
+
+In 4D manifest syntax, the return type codes are:
+- `T` — Text
+- `L` — Longint / Integer
+- `R` — Real
+- `B` — Boolean
+- `J` — Object (JSON)
+- `C` — Collection
+- `P` — Picture
+- `O` — **not a valid return type for object** (common mistake)
+
+Always use `:J` in the syntax string for commands that return an object.
+
+### 18. Windows cross-platform build issues
+
+**a) `__attribute__((visibility("default")))` is GCC/Clang only.**
+MSVC does not support it. Use a conditional macro:
+```cpp
+#if defined(_WIN32)
+#define PLUGIN_EXPORT
+#else
+#define PLUGIN_EXPORT __attribute__((visibility("default")))
+#endif
+
+extern "C" PLUGIN_EXPORT
+void PluginMain(PA_long32 selector, PA_PluginParameters params) { ... }
+```
+
+**b) `__declspec(dllexport)` conflicts with the SDK's `PluginMain` declaration.**
+The SDK header already declares `PluginMain` as `extern "C"`. Adding `__declspec(dllexport)` causes C2375 (redefinition with different linkage). **Use a `.def` file instead:**
+```
+EXPORTS
+    PluginMain
+    FourDPackex
+```
+And in CMakeLists.txt:
+```cmake
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.def"
+)
+```
+
+**c) `-Wno-*` flags are invalid on MSVC.**
+Use `/wd` equivalents: `/wd4267` (size_t to int), `/wd4244` (narrowing), `/wd4305` (truncation).
+
+**d) `TARGET_BUNDLE_DIR` is macOS-only.**
+Wrap all bundle-related CMake logic in `if(APPLE)`.
+
+**e) Windows plugin folder structure:**
+```
+Plugins/
+  PluginName/
+    Contents/
+      Windows64/
+        PluginName.4DX
+      Resources/
+        manifest.json
+```
+This mirrors the macOS `.bundle` structure but as a plain folder hierarchy.
+
 ---
 
 ## Step-by-Step Checklist
@@ -1839,3 +1924,86 @@ See the full workflow templates in [GitHub Actions CI/CD](#github-actions-cicd) 
 - No need to manage Xcode object IDs or MSBuild XML
 - Adding source files requires editing one place, not two project files
 - Cross-platform build commands are simple and well-documented
+
+---
+
+## Worked Example: CLD2 (Compact Language Detector 2) Plugin
+
+This section documents a complete plugin built from scratch wrapping the [CLD2 library](https://github.com/CLD2Owners/cld2).
+
+### Overview
+
+- **Syntax:** `result:=CLD2(text)` — takes a text string, returns a JSON object with detected languages
+- **Return value:** Object containing `language`, `language_code`, `is_reliable`, `text_bytes`, and a `candidates` array with top-3 language guesses (each with name, code, percent, score)
+- **Plugin ID:** 31000, Command ID: 1
+
+### Repository Structure
+
+```
+4d-plugin-CLD2/
+├── .github/workflows/
+│   ├── test.yml          # CI: build + test with tool4d
+│   ├── release.yml       # Build, sign, notarize, create release
+│   └── bump-version.yml  # Bump VERSION file
+├── CLD2/                 # Plugin source folder
+│   ├── CMakeLists.txt
+│   ├── CLD2-4dplugin.cpp
+│   ├── manifest.json
+│   ├── Info.plist
+│   └── CLD2-test/        # 4D test project
+│       ├── Plugins/      # Pre-built plugin for testing
+│       └── Project/
+├── 4D-Plugin-SDK/        # Submodule
+├── cld2-src/             # Submodule (NOT "cld2" — see Pitfall #16)
+├── README.md
+└── VERSION
+```
+
+### Key Implementation Details
+
+**CLD2 API usage:**
+```cpp
+#include "compact_lang_det.h"
+#include "lang_script.h"  // for LanguageCode(), LanguageName()
+
+CLD2::Language language3[3];
+int percent3[3];
+double normalized_score3[3];
+int text_bytes;
+bool is_reliable;
+
+CLD2::Language lang = CLD2::DetectLanguageSummary(
+    utf8text, length, true,
+    language3, percent3, normalized_score3,
+    nullptr, &text_bytes, &is_reliable);
+```
+
+**JSON construction pattern:**
+Build a UTF-8 JSON string manually (snprintf or string concatenation), convert to UTF-16, then use the `PA_ExecuteCommandByID(1218)` workaround (see Pitfall #15) to parse it into a 4D object.
+
+**CMakeLists.txt notes:**
+- SDK path: `${CMAKE_CURRENT_SOURCE_DIR}/../4D-Plugin-SDK/4D Plugin API`
+- CLD2 sources: `${CMAKE_CURRENT_SOURCE_DIR}/../cld2-src/internal/*.cc` (full variant tables)
+- Suppress CLD2 warnings: `-Wno-c++11-narrowing -Wno-writable-strings -Wno-unused-variable -Wno-tautological-undefined-compare`
+- Post-build copy for `manifest.json`:
+
+```cmake
+set(PLUGIN_OUTPUT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.bundle")
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PLUGIN_OUTPUT}/Contents/Resources"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/manifest.json"
+        "${PLUGIN_OUTPUT}/Contents/Resources/manifest.json"
+)
+```
+
+### Lessons Learned
+
+1. **Submodule naming on macOS** — never use a name that differs only in case from your plugin folder (Pitfall #16)
+2. **PA_JsonParse is buggy** — use direct `PA_ExecuteCommandByID(1218)` with zeroed params (Pitfall #15)
+3. **Don't dispose strings passed to the runtime** — same ownership pattern as pictures (Pitfall #14)
+4. **Object return type in manifest is `J`** — not `O` (Pitfall #17)
+5. **Always use `PA_GetObjectVariable(result)`** — not `result.uValue.fObject` directly
+6. **Deploy both binary AND manifest.json** to the test project's Plugins folder after builds
+7. **Windows needs a `.def` file** for exports — `__declspec(dllexport)` conflicts with SDK header (Pitfall #18)
+8. **Wrap all macOS-specific CMake** in `if(APPLE)` — frameworks, bundle properties, visibility flags (Pitfall #18)
