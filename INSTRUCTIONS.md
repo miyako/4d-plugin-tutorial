@@ -1632,6 +1632,53 @@ In 4D manifest syntax, the return type codes are:
 
 Always use `:J` in the syntax string for commands that return an object.
 
+### 18. Windows cross-platform build issues
+
+**a) `__attribute__((visibility("default")))` is GCC/Clang only.**
+MSVC does not support it. Use a conditional macro:
+```cpp
+#if defined(_WIN32)
+#define PLUGIN_EXPORT
+#else
+#define PLUGIN_EXPORT __attribute__((visibility("default")))
+#endif
+
+extern "C" PLUGIN_EXPORT
+void PluginMain(PA_long32 selector, PA_PluginParameters params) { ... }
+```
+
+**b) `__declspec(dllexport)` conflicts with the SDK's `PluginMain` declaration.**
+The SDK header already declares `PluginMain` as `extern "C"`. Adding `__declspec(dllexport)` causes C2375 (redefinition with different linkage). **Use a `.def` file instead:**
+```
+EXPORTS
+    PluginMain
+    FourDPackex
+```
+And in CMakeLists.txt:
+```cmake
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}.def"
+)
+```
+
+**c) `-Wno-*` flags are invalid on MSVC.**
+Use `/wd` equivalents: `/wd4267` (size_t to int), `/wd4244` (narrowing), `/wd4305` (truncation).
+
+**d) `TARGET_BUNDLE_DIR` is macOS-only.**
+Wrap all bundle-related CMake logic in `if(APPLE)`.
+
+**e) Windows plugin folder structure:**
+```
+Plugins/
+  PluginName/
+    Contents/
+      Windows64/
+        PluginName.4DX
+      Resources/
+        manifest.json
+```
+This mirrors the macOS `.bundle` structure but as a plain folder hierarchy.
+
 ---
 
 ## Step-by-Step Checklist
